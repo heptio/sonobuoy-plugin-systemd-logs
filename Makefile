@@ -30,7 +30,8 @@ container: get_systemd_logs.sh
 	$(DOCKER) build -t $(REGISTRY)/$(TARGET):latest -t $(REGISTRY)/$(TARGET):$(VERSION) .
 
 push:
-	$(DOCKER) push $(REGISTRY)/$(TARGET):latest $(REGISTRY)/$(TARGET):$(VERSION)
+	$(DOCKER) push $(REGISTRY)/$(TARGET):latest
+	$(DOCKER) push $(REGISTRY)/$(TARGET):$(VERSION)
 
 .PHONY: all container push
 
