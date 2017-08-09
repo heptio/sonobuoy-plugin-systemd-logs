@@ -30,7 +30,7 @@ container: get_systemd_logs.sh
 	$(DOCKER) build -t $(REGISTRY)/$(TARGET):latest -t $(REGISTRY)/$(TARGET):$(VERSION) .
 
 push:
-	gcloud docker -- push $(REGISTRY)/$(TARGET):latest $(REGISTRY)/$(TARGET):$(VERSION)
+	$(DOCKER) push $(REGISTRY)/$(TARGET):latest $(REGISTRY)/$(TARGET):$(VERSION)
 
 .PHONY: all container push
 
