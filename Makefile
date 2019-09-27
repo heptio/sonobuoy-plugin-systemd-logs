@@ -22,18 +22,78 @@ REGISTRY ?= gcr.io/heptio-images
 IMAGE = $(REGISTRY)/$(TARGET)
 DOCKER ?= docker
 DIR := ${CURDIR}
-VERSION ?= v0.1
+VERSION ?= v0.2
+
+ARCH    ?= amd64
+LINUX_ARCHS = amd64 arm64 ppc64le
+PLATFORMS = linux/amd64,linux/arm64,linux/ppc64le
+
+IMAGEARCH ?=
+QEMUARCH  ?=
+
+MANIFEST_TOOL_VERSION := v1.0.0
+
+ifneq ($(ARCH),amd64)
+TARGET = sonobuoy-plugin-systemd-logs-$(ARCH)
+endif
+
+ifeq ($(ARCH),amd64)
+IMAGEARCH =
+QEMUARCH  = x86_64
+else ifeq ($(ARCH),arm)
+IMAGEARCH = arm32v7/
+QEMUARCH  = arm
+else ifeq ($(ARCH),arm64)
+IMAGEARCH = arm64v8/
+QEMUARCH  = aarch64
+else ifeq ($(ARCH),ppc64le)
+IMAGEARCH = ppc64le/
+QEMUARCH  = ppc64le
+else
+$(error unknown arch "$(ARCH)")
+endif
 
 all: container
 
-container: get_systemd_logs.sh
-	$(DOCKER) build -t $(REGISTRY)/$(TARGET):latest -t $(REGISTRY)/$(TARGET):$(VERSION) .
+pre-cross:
+	docker run --rm --privileged multiarch/qemu-user-static:register --reset
 
-push:
+build-container: get_systemd_logs.sh
+	$(DOCKER) build --build-arg IMAGEARCH=$(IMAGEARCH) \
+               --build-arg QEMUARCH=$(QEMUARCH) \
+               -t $(REGISTRY)/$(TARGET):latest -t $(REGISTRY)/$(TARGET):$(VERSION) .
+
+container: pre-cross
+	for arch in $(LINUX_ARCHS); do \
+		$(MAKE) build-container ARCH=$$arch TARGET="sonobuoy-plugin-systemd-logs-$$arch"; \
+	done
+
+push-image:
 	$(DOCKER) push $(REGISTRY)/$(TARGET):latest
 	$(DOCKER) push $(REGISTRY)/$(TARGET):$(VERSION)
 
+push_manifest:
+	./manifest-tool -username oauth2accesstoken --password "`gcloud auth print-access-token`" push from-args --platforms $(PLATFORMS) --template $(REGISTRY)/$(TARGET)-ARCH:$(VERSION) --target  $(REGISTRY)/$(TARGET):$(VERSION)
+
+pre-push:
+	curl -sSL https://github.com/estesp/manifest-tool/releases/download/$(MANIFEST_TOOL_VERSION)/manifest-tool-linux-amd64 > manifest-tool
+	chmod +x manifest-tool
+
+push: pre-push container
+	for arch in $(LINUX_ARCHS); do \
+		$(MAKE) push-image TARGET="sonobuoy-plugin-systemd-logs-$$arch"; \
+	done
+
+	$(MAKE) push_manifest VERSION=latest
+	$(MAKE) push_manifest
+
 .PHONY: all container push
 
-clean:
+clean-image:
+	$(DOCKER) rmi $(REGISTRY)/$(TARGET):latest $(REGISTRY)/$(TARGET):latest || true
 	$(DOCKER) rmi $(REGISTRY)/$(TARGET):latest $(REGISTRY)/$(TARGET):$(VERSION) || true
+clean:
+	rm -f manifest-tool*
+	for arch in $(LINUX_ARCHS); do \
+		$(MAKE) clean-image TARGET=$(TARGET)-$$arch; \
+	done
